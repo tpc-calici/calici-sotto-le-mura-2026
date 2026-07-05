@@ -352,6 +352,8 @@ const state = {
     giornoGroupId: DAYS[0].id,
     logFilterCat: 'all',
     logFilterCasetta: 'all',
+    confirmDeleteLogId: null,
+    confirmDemoAction: null,
     loginError: '',
     tempName: ''
   }
@@ -419,6 +421,7 @@ function render(){
     case 'gestore_riepilogo': html = wrapGestoreSection('📦 Scorte', renderGestoreRiepilogo()); break;
     case 'gestore_coupon': html = wrapGestoreSection('🎟️ Coupon', renderGestoreCoupon()); break;
     case 'gestore_log': html = wrapGestoreSection('📜 Registro', renderGestoreLog()); break;
+    case 'gestore_demo': html = wrapGestoreSection('🧪 Dati di Prova', renderGestoreDemo()); break;
     default: html = '<div class="loading-full">Schermata non trovata</div>';
   }
   app.innerHTML = html;
@@ -592,7 +595,8 @@ function renderGestoreMenu(){
     ['giorno','📊','Vendite','Per giornata, weekend o totale evento'],
     ['riepilogo','📦','Scorte','Residui e scorte più basse'],
     ['coupon','🎟️','Coupon','Totali per casetta e serata'],
-    ['log','📜','Registro','Ogni bottiglia segnata, da chi e quando']
+    ['log','📜','Registro','Ogni bottiglia segnata, da chi e quando'],
+    ['demo','🧪','Dati di Prova','Simula un weekend per testare l\'app']
   ];
   return `
   <div class="topbar dark">
@@ -852,6 +856,7 @@ function renderGestoreCoupon(){
 function renderGestoreLog(){
   const cat = state.ui.logFilterCat;
   const cid = state.ui.logFilterCasetta;
+  const confirmingId = state.ui.confirmDeleteLogId;
   let entries = state.log.slice().sort(function(a,b){ return b.ts-a.ts; });
   if(cat !== 'all') entries = entries.filter(function(e){ return e.categoria===cat; });
   if(cid !== 'all') entries = entries.filter(function(e){ return e.casettaId===cid; });
@@ -870,19 +875,50 @@ function renderGestoreLog(){
     </div>
     <div class="card" style="padding:0;overflow-x:auto;">
       <table>
-        <thead><tr><th>Data/Ora</th><th>Casetta</th><th>Prodotto</th><th>Persona</th></tr></thead>
+        <thead><tr><th>Data/Ora</th><th>Casetta</th><th>Prodotto</th><th>Persona</th><th>Azioni</th></tr></thead>
         <tbody>
           ${entries.length ? entries.map(function(e){
+            const actionsCell = confirmingId===e.id
+              ? `<button class="btn-sm btn-danger" data-action="confirm-delete-log" data-id="${e.id}">Sì, elimina</button> <button class="btn-sm btn-outline" data-action="cancel-delete-log">Annulla</button>`
+              : `<button class="icon-btn" data-action="ask-delete-log" data-id="${e.id}" title="Elimina questa voce">🗑</button>`;
             return `<tr>
               <td>${fmtDateTime(e.ts)}</td>
               <td><span class="badge ${e.categoria}">${e.categoria}</span> ${escapeHtml(e.casettaName)}</td>
               <td>${escapeHtml(e.productName)}</td>
               <td>${escapeHtml(e.person)}</td>
+              <td>${actionsCell}</td>
             </tr>`;
-          }).join('') : `<tr><td colspan="4" class="empty-note">Nessuna bottiglia registrata ancora.</td></tr>`}
+          }).join('') : `<tr><td colspan="5" class="empty-note">Nessuna bottiglia registrata ancora.</td></tr>`}
         </tbody>
       </table>
     </div>
+  `;
+}
+
+function renderGestoreDemo(){
+  const confirming = state.ui.confirmDemoAction;
+  return `
+    <p class="info-msg">Questa sezione serve solo per fare delle prove prima dell'evento vero. "Genera simulazione" crea dati finti (carichi, bottiglie vendute, coupon) per le 3 serate del Weekend 1, lasciando il Weekend 2 vuoto — utile per testare l'app come se fossimo a fine primo weekend.</p>
+    <div class="card">
+      <h3 class="section-title" style="font-size:16px;">🧪 Genera dati di prova</h3>
+      <p style="color:var(--muted);font-size:13.5px;">Sovrascrive tutti i dati attuali (carichi, bottiglie segnate, coupon) con dati casuali di esempio.</p>
+      <button class="btn btn-primary" data-action="ask-generate-simulation">Genera simulazione</button>
+    </div>
+    <div class="card">
+      <h3 class="section-title" style="font-size:16px;color:var(--red);">🗑️ Reset dati evento</h3>
+      <p style="color:var(--muted);font-size:13.5px;">Cancella tutti i carichi, le bottiglie segnate e i coupon (le casette e i prodotti restano). Usalo dopo le prove, prima dell'evento vero.</p>
+      <button class="btn btn-danger" data-action="ask-reset-data">Reset dati</button>
+    </div>
+    ${confirming==='generate' ? `
+    <div class="confirm-box">
+      <p>Confermi di voler generare dati di prova? Sovrascriverà tutti i dati attuali.</p>
+      <div class="confirm-row"><button class="btn-outline" data-action="cancel-demo-action">Annulla</button><button class="btn-primary" data-action="do-generate-simulation">Sì, genera</button></div>
+    </div>` : ''}
+    ${confirming==='reset' ? `
+    <div class="confirm-box">
+      <p>Confermi di voler cancellare TUTTI i dati (carichi, bottiglie, coupon)? Non si può annullare.</p>
+      <div class="confirm-row"><button class="btn-outline" data-action="cancel-demo-action">Annulla</button><button class="btn-danger" data-action="do-reset-data">Sì, cancella</button></div>
+    </div>` : ''}
   `;
 }
 
@@ -972,6 +1008,33 @@ async function handleAction(action, target){
     case 'go-gestore-menu': state.screen='gestore_menu'; render(); break;
     case 'go-gestore-section': state.screen = 'gestore_' + target.dataset.section; render(); break;
 
+    case 'ask-delete-log': ui.confirmDeleteLogId = target.dataset.id; render(); break;
+    case 'cancel-delete-log': ui.confirmDeleteLogId = null; render(); break;
+    case 'confirm-delete-log': {
+      const idToDelete = target.dataset.id;
+      state.log = state.log.filter(function(e){ return e.id !== idToDelete; });
+      await saveLog(state.log);
+      ui.confirmDeleteLogId = null;
+      render();
+      break;
+    }
+
+    case 'ask-generate-simulation': ui.confirmDemoAction = 'generate'; render(); break;
+    case 'ask-reset-data': ui.confirmDemoAction = 'reset'; render(); break;
+    case 'cancel-demo-action': ui.confirmDemoAction = null; render(); break;
+    case 'do-generate-simulation': {
+      await generateSimulation();
+      ui.confirmDemoAction = null;
+      render();
+      break;
+    }
+    case 'do-reset-data': {
+      await resetEventData();
+      ui.confirmDemoAction = null;
+      render();
+      break;
+    }
+
     case 'add-product': {
       const cat = target.dataset.cat, cid = target.dataset.cid;
       const casetta = state.config[cat].find(function(c){ return c.id===cid; });
@@ -1042,6 +1105,97 @@ async function handleBlurEdit(target){
     product.name = target.value.trim() || product.name;
     await saveConfig(state.config);
   }
+}
+
+/* =========================================================================
+   DATI DI PROVA / RESET
+   ========================================================================= */
+const DEMO_NAMES = ['Marco','Giulia','Luca','Sara','Davide','Elena','Matteo','Francesca','Chiara','Andrea'];
+function randInt(min, max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function pickRandom(arr){ return arr[randInt(0, arr.length-1)]; }
+
+async function generateSimulation(){
+  const simDays = ['w1v','w1s','w1d'];
+  const casette = allCasette();
+  const newLoads = {};
+  const newLoadsLog = [];
+  const newLog = [];
+  const newCoupons = {};
+
+  casette.forEach(function(c){
+    newLoads[c.id] = {};
+    newCoupons[c.id] = {};
+    simDays.forEach(function(dayId){
+      const win = dayWindow(DAYS.find(function(d){ return d.id===dayId; }));
+      newLoads[c.id][dayId] = {};
+      c.products.forEach(function(p){
+        let qty = 0;
+        if(dayId === 'w1v'){
+          qty = randInt(18, 36);
+        } else if(Math.random() < 0.35){
+          qty = randInt(6, 14);
+        }
+        if(qty > 0){
+          newLoads[c.id][dayId][p.id] = qty;
+          newLoadsLog.push({
+            id: 'demo-l-'+c.id+'-'+dayId+'-'+p.id,
+            casettaId: c.id, casettaName: c.name, categoria: c.categoria,
+            dayId: dayId, productId: p.id, productName: p.name, qty: qty,
+            ts: win.start.getTime() + randInt(0, 3*3600*1000)
+          });
+        }
+      });
+      newCoupons[c.id][dayId] = {
+        count: randInt(5, 25),
+        person: pickRandom(DEMO_NAMES),
+        ts: win.start.getTime() + randInt(4,8)*3600*1000
+      };
+    });
+  });
+
+  casette.forEach(function(c){
+    simDays.forEach(function(dayId){
+      const win = dayWindow(DAYS.find(function(d){ return d.id===dayId; }));
+      c.products.forEach(function(p){
+        const loadedSoFar = simDays.slice(0, simDays.indexOf(dayId)+1).reduce(function(sum, dd){
+          return sum + ((newLoads[c.id][dd] && newLoads[c.id][dd][p.id]) || 0);
+        }, 0);
+        const alreadySold = newLog.filter(function(e){ return e.casettaId===c.id && e.productId===p.id; }).length;
+        const available = loadedSoFar - alreadySold;
+        if(available <= 0) return;
+        const sellToday = randInt(0, Math.min(available, 10));
+        for(let i=0; i<sellToday; i++){
+          newLog.push({
+            id: 'demo-e-'+c.id+'-'+p.id+'-'+dayId+'-'+i,
+            categoria: c.categoria, casettaId: c.id, casettaName: c.name,
+            productId: p.id, productName: p.name,
+            person: pickRandom(DEMO_NAMES),
+            ts: win.start.getTime() + randInt(0, (win.end.getTime()-win.start.getTime())-1000)
+          });
+        }
+      });
+    });
+  });
+
+  state.loads = newLoads;
+  state.loadsLog = newLoadsLog;
+  state.log = newLog;
+  state.coupons = newCoupons;
+  await saveLoads(state.loads);
+  await saveLoadsLog(state.loadsLog);
+  await saveLog(state.log);
+  await saveCoupons(state.coupons);
+}
+
+async function resetEventData(){
+  state.loads = {};
+  state.loadsLog = [];
+  state.log = [];
+  state.coupons = {};
+  await saveLoads(state.loads);
+  await saveLoadsLog(state.loadsLog);
+  await saveLog(state.log);
+  await saveCoupons(state.coupons);
 }
 
 app.addEventListener('click', function(e){
