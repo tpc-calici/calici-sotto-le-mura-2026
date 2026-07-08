@@ -188,6 +188,20 @@
   .setup-box{background:var(--paper);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:520px;margin:40px auto;}
   .setup-box h2{color:var(--wine-dark);margin-top:0;}
   .setup-box code{background:var(--cream);padding:2px 6px;border-radius:6px;font-size:13px;}
+
+  .hist-mode-row{display:flex;gap:10px;margin-bottom:16px;}
+  .hist-mode-btn{
+    flex:1;padding:12px;border-radius:11px;border:1.5px solid var(--border);background:var(--paper);
+    font-weight:700;font-size:13.5px;color:var(--muted);
+  }
+  .hist-mode-btn.active{background:var(--brand-blue);border-color:var(--brand-blue);color:#fff;}
+  .bar-row{display:flex;align-items:center;gap:10px;padding:7px 0;}
+  .bar-label{width:104px;flex-shrink:0;font-size:12px;color:var(--charcoal);line-height:1.2;}
+  .bar-track{flex:1;background:var(--cream);border-radius:7px;height:20px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:7px;transition:width .3s ease;}
+  .bar-fill.vino{background:var(--wine);}
+  .bar-fill.birra{background:var(--gold);}
+  .bar-value{width:32px;text-align:right;font-weight:700;font-size:13px;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -354,6 +368,10 @@ const state = {
     logFilterCasetta: 'all',
     confirmDeleteLogId: null,
     confirmDemoAction: null,
+    histMode: 'giorno',
+    histCasettaId: null,
+    histProductId: 'all',
+    histGroupId: DAYS[0].id,
     loginError: '',
     tempName: ''
   }
@@ -368,8 +386,8 @@ function allCasette(){
 }
 function unitFor(categoria){
   return categoria === 'birra'
-    ? { sing:'fusto', plur:'fusti', adj:'finito', btn:'Segna fusto finito' }
-    : { sing:'bottiglia', plur:'bottiglie', adj:'finita', btn:'Segna bottiglia finita' };
+    ? { sing:'fusto', plur:'fusti', adj:'finito', btn:'Segna fusto finito', loadedLabel:'caricati', finishedLabel:'finiti', soldLabel:'venduti' }
+    : { sing:'bottiglia', plur:'bottiglie', adj:'finita', btn:'Segna bottiglia finita', loadedLabel:'caricate', finishedLabel:'finite', soldLabel:'vendute' };
 }
 function totalLoaded(casettaId, productId){
   let total = 0;
@@ -419,6 +437,7 @@ function render(){
     case 'gestore_carico': html = wrapGestoreSection('🧾 Carico Giornaliero', renderGestoreCarico()); break;
     case 'gestore_giorno': html = wrapGestoreSection('📊 Vendite', renderGestoreVenditeGiorno()); break;
     case 'gestore_riepilogo': html = wrapGestoreSection('📦 Scorte', renderGestoreRiepilogo()); break;
+    case 'gestore_istogrammi': html = wrapGestoreSection('📈 Istogrammi', renderGestoreIstogrammi()); break;
     case 'gestore_coupon': html = wrapGestoreSection('🎟️ Coupon', renderGestoreCoupon()); break;
     case 'gestore_log': html = wrapGestoreSection('📜 Registro', renderGestoreLog()); break;
     case 'gestore_demo': html = wrapGestoreSection('🧪 Dati di Prova', renderGestoreDemo()); break;
@@ -541,7 +560,10 @@ function renderCasettaView(){
       <div class="tb-title">${icon} ${escapeHtml(casetta.name)}</div>
       <div class="tb-sub">${escapeHtml(s.name)}</div>
     </div>
-    <button data-action="logout-casetta">Esci</button>
+    <div style="display:flex;gap:8px;">
+      <button data-action="manual-refresh" title="Aggiorna">🔄</button>
+      <button data-action="logout-casetta">Esci</button>
+    </div>
   </div>
   <div class="content">
     ${rows}
@@ -594,6 +616,7 @@ function renderGestoreMenu(){
     ['carico','🧾','Carico Giornaliero','Aggiungi bottiglie/fusti caricati'],
     ['giorno','📊','Vendite','Per giornata, weekend o totale evento'],
     ['riepilogo','📦','Scorte','Residui e scorte più basse'],
+    ['istogrammi','📈','Istogrammi','Confronta vendite per casetta o giornata'],
     ['coupon','🎟️','Coupon','Totali per casetta e serata'],
     ['log','📜','Registro','Ogni bottiglia segnata, da chi e quando'],
     ['demo','🧪','Dati di Prova','Simula un weekend per testare l\'app']
@@ -601,7 +624,10 @@ function renderGestoreMenu(){
   return `
   <div class="topbar dark">
     <div><div class="tb-title">📋 Gestore</div><div class="tb-sub">${EVENT_NAME}</div></div>
-    <button data-action="logout-gestore">Esci</button>
+    <div style="display:flex;gap:8px;">
+      <button data-action="manual-refresh" title="Aggiorna">🔄</button>
+      <button data-action="logout-gestore">Esci</button>
+    </div>
   </div>
   <div class="screen wide">
     <div class="menu-list">
@@ -619,7 +645,10 @@ function wrapGestoreSection(title, innerHtml){
   return `
   <div class="topbar dark">
     <div><div class="tb-title">${title}</div><div class="tb-sub">${EVENT_NAME}</div></div>
-    <button data-action="go-gestore-menu">← Menu</button>
+    <div style="display:flex;gap:8px;">
+      <button data-action="manual-refresh" title="Aggiorna">🔄</button>
+      <button data-action="go-gestore-menu">← Menu</button>
+    </div>
   </div>
   <div class="content wide">${innerHtml}</div>`;
 }
@@ -738,7 +767,7 @@ function renderGestoreVenditeGiorno(){
       if(casettaTotal===0) return `<div class="card"><div class="casetta-block-title"><span>${escapeHtml(c.name)}</span><span style="color:var(--muted);">0 ${u.plur}</span></div></div>`;
       return `<div class="card">
         <div class="casetta-block-title"><span>${escapeHtml(c.name)}</span><span style="font-weight:700;">${casettaTotal} ${u.plur}</span></div>
-        <table><thead><tr><th>Prodotto</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} venduti</th></tr></thead>
+        <table><thead><tr><th>Prodotto</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} ${u.soldLabel}</th></tr></thead>
         <tbody>${prodRows}</tbody></table>
       </div>`;
     }).join('');
@@ -806,7 +835,7 @@ function renderGestoreRiepilogo(){
       return `<div class="card">
         <div class="casetta-block-title"><span>${escapeHtml(c.name)}</span></div>
         <table>
-          <thead><tr><th>Prodotto</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} caricati</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} finiti</th><th>Residui</th></tr></thead>
+          <thead><tr><th>Prodotto</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} ${u.loadedLabel}</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} ${u.finishedLabel}</th><th>Residui</th></tr></thead>
           <tbody>${prodRows}</tbody>
         </table>
       </div>`;
@@ -816,6 +845,122 @@ function renderGestoreRiepilogo(){
 
   return `
     ${lowStockHtml}
+    ${block('vino','🍷 Vino')}
+    ${block('birra','🍺 Birra')}
+  `;
+}
+
+function renderBarChart(items, categoria){
+  if(!items.length) return `<p class="empty-note">Nessun dato da mostrare.</p>`;
+  const max = Math.max.apply(null, items.map(function(it){ return it.value; }).concat([1]));
+  return items.map(function(it){
+    const pct = Math.round((it.value / max) * 100);
+    return `<div class="bar-row">
+      <span class="bar-label">${escapeHtml(it.label)}</span>
+      <div class="bar-track"><div class="bar-fill ${categoria}" style="width:${pct}%"></div></div>
+      <span class="bar-value">${it.value}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderGestoreIstogrammi(){
+  const mode = state.ui.histMode;
+  const casette = allCasette();
+
+  const modeRow = `
+    <div class="hist-mode-row">
+      <button class="hist-mode-btn ${mode==='giorno'?'active':''}" data-action="set-hist-mode" data-mode="giorno">📅 Filtra per Giornata</button>
+      <button class="hist-mode-btn ${mode==='casetta'?'active':''}" data-action="set-hist-mode" data-mode="casetta">🏠 Filtra per Casetta</button>
+    </div>`;
+
+  if(mode === 'casetta'){
+    const selId = state.ui.histCasettaId || casette[0].id;
+    const casetta = casette.find(function(c){ return c.id===selId; });
+    const u = unitFor(casetta.categoria);
+    const prodId = state.ui.histProductId || 'all';
+    const prodValid = prodId==='all' || casetta.products.some(function(p){ return p.id===prodId; });
+    const activeProdId = prodValid ? prodId : 'all';
+
+    const items = DAYS.map(function(d){
+      const count = state.log.filter(function(e){
+        return e.casettaId===casetta.id && getDayIdForTimestamp(e.ts)===d.id &&
+          (activeProdId==='all' || e.productId===activeProdId);
+      }).length;
+      return { label: d.label.split(' — ')[0], value: count };
+    });
+
+    const productItems = casetta.products.map(function(p){
+      const count = state.log.filter(function(e){ return e.casettaId===casetta.id && e.productId===p.id; }).length;
+      return { label: p.name, value: count };
+    });
+
+    const chartTitle = activeProdId==='all'
+      ? `${escapeHtml(casetta.name)} — ${u.plur} ${u.soldLabel} per giornata (tutti i prodotti)`
+      : `${escapeHtml(casetta.name)} — ${escapeHtml((casetta.products.find(function(p){return p.id===activeProdId;})||{}).name||'')} per giornata`;
+
+    return `
+      ${modeRow}
+      <div class="field">
+        <label>Casetta</label>
+        <select id="hist-casetta-select">
+          <optgroup label="Vino">
+            ${state.config.vino.map(function(c){ return `<option value="${c.id}" ${c.id===selId?'selected':''}>${escapeHtml(c.name)}</option>`; }).join('')}
+          </optgroup>
+          <optgroup label="Birra">
+            ${state.config.birra.map(function(c){ return `<option value="${c.id}" ${c.id===selId?'selected':''}>${escapeHtml(c.name)}</option>`; }).join('')}
+          </optgroup>
+        </select>
+      </div>
+      <div class="field">
+        <label>Prodotto (drill-down)</label>
+        <select id="hist-product-select">
+          <option value="all" ${activeProdId==='all'?'selected':''}>Tutti i prodotti</option>
+          ${casetta.products.map(function(p){ return `<option value="${p.id}" ${activeProdId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`; }).join('')}
+        </select>
+      </div>
+      <div class="card">
+        <div class="casetta-block-title"><span>${chartTitle}</span></div>
+        ${renderBarChart(items, casetta.categoria)}
+      </div>
+      ${activeProdId==='all' ? `
+      <div class="card">
+        <div class="casetta-block-title"><span>${escapeHtml(casetta.name)} — totale per prodotto (tutto l'evento)</span></div>
+        ${renderBarChart(productItems, casetta.categoria)}
+      </div>` : ''}
+    `;
+  }
+
+  // mode === 'giorno'
+  const groupId = state.ui.histGroupId;
+  const dayIds = getDayIdsForGroup(groupId);
+  const block = (categoria, label) => {
+    const u = unitFor(categoria);
+    const items = state.config[categoria].map(function(c){
+      const count = state.log.filter(function(e){ return e.casettaId===c.id && dayIds.indexOf(getDayIdForTimestamp(e.ts)) !== -1; }).length;
+      return { label: c.name, value: count };
+    });
+    return `
+      <div class="card">
+        <div class="casetta-block-title"><span>${label} — ${u.plur} ${u.soldLabel}</span></div>
+        ${renderBarChart(items, categoria)}
+      </div>`;
+  };
+  return `
+    ${modeRow}
+    <div class="field">
+      <label>Periodo</label>
+      <select id="hist-day-select">
+        <optgroup label="Singole giornate">
+          ${DAYS.map(function(d){ return `<option value="${d.id}" ${d.id===groupId?'selected':''}>${d.label}${d.ricarica?' (ricarica)':''}</option>`; }).join('')}
+        </optgroup>
+        <optgroup label="Riepiloghi">
+          <option value="weekend1" ${groupId==='weekend1'?'selected':''}>📅 Weekend 1 — Totale</option>
+          <option value="weekend2" ${groupId==='weekend2'?'selected':''}>📅 Weekend 2 — Totale</option>
+          <option value="totale" ${groupId==='totale'?'selected':''}>🏁 Totale Evento</option>
+        </optgroup>
+      </select>
+    </div>
+    <p style="color:var(--muted);font-size:12.5px;margin-top:-8px;">${groupLabel(groupId)}</p>
     ${block('vino','🍷 Vino')}
     ${block('birra','🍺 Birra')}
   `;
@@ -1007,6 +1152,8 @@ async function handleAction(action, target){
     case 'logout-gestore': state.gestoreAuthed=false; state.screen='home'; render(); break;
     case 'go-gestore-menu': state.screen='gestore_menu'; render(); break;
     case 'go-gestore-section': state.screen = 'gestore_' + target.dataset.section; render(); break;
+    case 'set-hist-mode': ui.histMode = target.dataset.mode; render(); break;
+    case 'manual-refresh': await refreshSharedData(true); break;
 
     case 'ask-delete-log': ui.confirmDeleteLogId = target.dataset.id; render(); break;
     case 'cancel-delete-log': ui.confirmDeleteLogId = null; render(); break;
@@ -1086,6 +1233,9 @@ function handleChangeAction(target){
   if(target.id === 'load-casetta-select'){ ui.loadCasettaId = target.value; render(); }
   else if(target.id === 'load-day-select'){ ui.loadDayId = target.value; render(); }
   else if(target.id === 'giorno-day-select'){ ui.giornoGroupId = target.value; render(); }
+  else if(target.id === 'hist-casetta-select'){ ui.histCasettaId = target.value; ui.histProductId = 'all'; render(); }
+  else if(target.id === 'hist-product-select'){ ui.histProductId = target.value; render(); }
+  else if(target.id === 'hist-day-select'){ ui.histGroupId = target.value; render(); }
   else if(target.id === 'log-filter-cat'){ ui.logFilterCat = target.value; ui.logFilterCasetta='all'; render(); }
   else if(target.id === 'log-filter-casetta'){ ui.logFilterCasetta = target.value; render(); }
 }
@@ -1214,6 +1364,48 @@ app.addEventListener('focusout', function(e){
 });
 
 /* =========================================================================
+   AGGIORNAMENTO AUTOMATICO (polling)
+   ========================================================================= */
+const AUTO_REFRESH_MS = 12000;
+// L'aggiornamento automatico è attivo solo durante l'evento vero, per non
+// consumare risorse inutilmente negli altri giorni. Il pulsante 🔄 manuale
+// funziona sempre, in qualsiasi momento (utile anche per i test).
+const EVENT_WINDOWS = [
+  { start: new Date(2026, 6, 24, 18, 0, 0), end: new Date(2026, 6, 27, 3, 0, 0) },  // Ven 24/07 18:00 -> Lun 27/07 03:00
+  { start: new Date(2026, 6, 31, 18, 0, 0), end: new Date(2026, 7, 3, 3, 0, 0) }    // Ven 31/07 18:00 -> Lun 03/08 03:00
+];
+function isWithinEventWindow(){
+  const now = Date.now();
+  return EVENT_WINDOWS.some(function(w){ return now >= w.start.getTime() && now < w.end.getTime(); });
+}
+function autoRefreshTick(){
+  if(isWithinEventWindow()) refreshSharedData(false);
+}
+// Schermate con campi non ancora salvati: qui l'aggiornamento automatico
+// aggiorna i dati in background ma NON ridisegna lo schermo, per non
+// interrompere chi sta scrivendo. Il pulsante 🔄 forza comunque l'aggiornamento.
+const UNSAFE_AUTOREFRESH_SCREENS = ['casetta_login','gestore_login','casetta_category','casetta_select','gestore_carico','gestore_config','casetta_coupon'];
+
+async function refreshSharedData(force){
+  if(!storageConfigured()) return;
+  try{
+    const cfg = await getConfig();
+    const ld = await getLoads();
+    const ll = await getLoadsLog();
+    const lg = await getLog();
+    const cp = await getCoupons();
+    state.config = cfg;
+    state.loads = ld;
+    state.loadsLog = ll;
+    state.log = lg;
+    state.coupons = cp;
+    if(force || UNSAFE_AUTOREFRESH_SCREENS.indexOf(state.screen) === -1){
+      render();
+    }
+  }catch(e){ console.error('refresh error', e); }
+}
+
+/* =========================================================================
    INIT
    ========================================================================= */
 async function init(){
@@ -1236,6 +1428,7 @@ async function init(){
       state.casettaSession = session;
       state.screen = 'casetta_view';
       render();
+      setInterval(autoRefreshTick, AUTO_REFRESH_MS);
       return;
     } else {
       clearLocalSession();
@@ -1243,6 +1436,7 @@ async function init(){
   }
   state.screen = 'home';
   render();
+  setInterval(autoRefreshTick, AUTO_REFRESH_MS);
 }
 
 init();
