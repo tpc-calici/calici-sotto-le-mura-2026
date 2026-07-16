@@ -360,7 +360,6 @@ const state = {
   ui: {
     catChoice: null,
     confirmProductId: null,
-    couponDay: DAYS[0].id,
     loadCasettaId: null,
     loadDayId: DAYS[0].id,
     giornoGroupId: DAYS[0].id,
@@ -368,6 +367,7 @@ const state = {
     logFilterCasetta: 'all',
     confirmDeleteLogId: null,
     confirmDemoAction: null,
+    couponAddError: '',
     histMode: 'giorno',
     histCasettaId: null,
     histProductId: 'all',
@@ -430,7 +430,6 @@ function render(){
     case 'casetta_category': html = renderCasettaCategory(); break;
     case 'casetta_select': html = renderCasettaSelect(); break;
     case 'casetta_view': html = renderCasettaView(); break;
-    case 'casetta_coupon': html = renderCasettaCoupon(); break;
     case 'gestore_login': html = renderGestoreLogin(); break;
     case 'gestore_menu': html = renderGestoreMenu(); break;
     case 'gestore_config': html = wrapGestoreSection('🏷️ Casette & Prodotti', renderGestoreConfig()); break;
@@ -567,32 +566,6 @@ function renderCasettaView(){
   </div>
   <div class="content">
     ${rows}
-    <button class="coupon-link" data-action="go-coupon">🎟️ Registra coupon venduti (fine serata)</button>
-  </div>`;
-}
-
-function renderCasettaCoupon(){
-  const s = state.casettaSession;
-  const casetta = findCasetta(s.categoria, s.casettaId);
-  const existing = (state.coupons[casetta.id] && state.coupons[casetta.id][state.ui.couponDay]) || null;
-  return `
-  <div class="topbar">
-    <div><div class="tb-title">🎟️ Coupon</div><div class="tb-sub">${escapeHtml(casetta.name)}</div></div>
-    <button data-action="go-casetta-view-back">Chiudi</button>
-  </div>
-  <div class="content">
-    <div class="field">
-      <label>Serata</label>
-      <select id="coupon-day-select">
-        ${DAYS.map(function(d){ return `<option value="${d.id}" ${d.id===state.ui.couponDay?'selected':''}>${d.label}</option>`; }).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Numero coupon venduti</label>
-      <input type="number" inputmode="numeric" min="0" id="coupon-count-input" value="${existing ? existing.count : ''}" placeholder="0">
-    </div>
-    ${existing ? `<p style="color:var(--muted);font-size:12.5px;">Ultimo salvataggio: ${existing.count} coupon, da ${escapeHtml(existing.person)} — ${fmtDateTime(existing.ts)}</p>` : ''}
-    <button class="btn btn-primary" data-action="save-coupon">Salva coupon</button>
   </div>`;
 }
 
@@ -992,7 +965,33 @@ function renderGestoreCoupon(){
       </table>
     </div>`;
   }).join('');
+
+  const casetteDatalist = `<datalist id="coupon-casette-datalist">
+    ${casette.map(function(c){ return `<option value="${escapeAttr(c.name)}">`; }).join('')}
+  </datalist>`;
+
   return `
+    <div class="card">
+      <h3 class="section-title" style="font-size:16px;">➕ Inserisci coupon</h3>
+      ${state.ui.couponAddError ? `<div class="error-msg">${state.ui.couponAddError}</div>` : ''}
+      <div class="field">
+        <label>Casetta</label>
+        <input type="text" id="coupon-add-casetta-search" list="coupon-casette-datalist" placeholder="Cerca il nome della casetta...">
+        ${casetteDatalist}
+      </div>
+      <div class="field">
+        <label>Serata</label>
+        <select id="coupon-add-day-select">
+          ${DAYS.map(function(d){ return `<option value="${d.id}">${d.label}${d.ricarica?' (ricarica)':''}</option>`; }).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Numero coupon venduti</label>
+        <input type="number" inputmode="numeric" min="0" id="coupon-add-count-input" placeholder="0">
+      </div>
+      <button class="btn btn-primary" data-action="gestore-save-coupon">Salva coupon</button>
+    </div>
+
     <div class="summary-strip"><div class="box"><b>${totalAll}</b><span>Coupon totali evento</span></div></div>
     ${rows}
   `;
@@ -1116,21 +1115,6 @@ async function handleAction(action, target){
       render();
       break;
     }
-    case 'go-coupon': state.screen='casetta_coupon'; render(); break;
-    case 'go-casetta-view-back': state.screen='casetta_view'; render(); break;
-    case 'save-coupon': {
-      const dayId = document.getElementById('coupon-day-select').value;
-      const countVal = parseInt(document.getElementById('coupon-count-input').value, 10);
-      if(isNaN(countVal) || countVal < 0){ return; }
-      const s = state.casettaSession;
-      if(!state.coupons[s.casettaId]) state.coupons[s.casettaId] = {};
-      state.coupons[s.casettaId][dayId] = { count: countVal, person: s.name, ts: Date.now() };
-      await saveCoupons(state.coupons);
-      ui.couponDay = dayId;
-      state.screen = 'casetta_view';
-      render();
-      break;
-    }
     case 'logout-casetta': {
       clearLocalSession();
       state.casettaSession = null;
@@ -1178,6 +1162,29 @@ async function handleAction(action, target){
     case 'do-reset-data': {
       await resetEventData();
       ui.confirmDemoAction = null;
+      render();
+      break;
+    }
+
+    case 'gestore-save-coupon': {
+      const nameVal = document.getElementById('coupon-add-casetta-search').value.trim().toLowerCase();
+      const dayId = document.getElementById('coupon-add-day-select').value;
+      const countVal = parseInt(document.getElementById('coupon-add-count-input').value, 10);
+      const casetta = allCasette().find(function(c){ return c.name.trim().toLowerCase() === nameVal; });
+      if(!nameVal || !casetta){
+        ui.couponAddError = 'Casetta non trovata: controlla il nome inserito.';
+        render();
+        return;
+      }
+      if(isNaN(countVal) || countVal < 0){
+        ui.couponAddError = 'Inserisci un numero di coupon valido.';
+        render();
+        return;
+      }
+      ui.couponAddError = '';
+      if(!state.coupons[casetta.id]) state.coupons[casetta.id] = {};
+      state.coupons[casetta.id][dayId] = { count: countVal, person: 'Gestore', ts: Date.now() };
+      await saveCoupons(state.coupons);
       render();
       break;
     }
@@ -1384,7 +1391,7 @@ function autoRefreshTick(){
 // Schermate con campi non ancora salvati: qui l'aggiornamento automatico
 // aggiorna i dati in background ma NON ridisegna lo schermo, per non
 // interrompere chi sta scrivendo. Il pulsante 🔄 forza comunque l'aggiornamento.
-const UNSAFE_AUTOREFRESH_SCREENS = ['casetta_login','gestore_login','casetta_category','casetta_select','gestore_carico','gestore_config','casetta_coupon'];
+const UNSAFE_AUTOREFRESH_SCREENS = ['casetta_login','gestore_login','casetta_category','casetta_select','gestore_carico','gestore_config'];
 
 async function refreshSharedData(force){
   if(!storageConfigured()) return;
