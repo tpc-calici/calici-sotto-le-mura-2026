@@ -168,8 +168,12 @@
   .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
   .badge.vino{background:#F3E3EA;color:var(--wine-dark);}
   .badge.birra{background:#FBF0D9;color:#8A5A00;}
-  .filters{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
-  .filters select{padding:9px 12px;border-radius:9px;border:1px solid var(--border);font-size:13px;background:#fff;}
+  .filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .filters select{
+    width:100%;max-width:100%;min-width:0;box-sizing:border-box;
+    padding:9px 10px;border-radius:9px;border:1px solid var(--border);font-size:13px;background:#fff;
+    text-overflow:ellipsis;overflow:hidden;white-space:nowrap;
+  }
   .load-input-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;}
   .load-input-row .lbl{flex:1;}
   .load-input-row .lbl .already{display:block;font-size:11.5px;color:var(--muted);}
@@ -775,11 +779,13 @@ function renderGestoreVenditeGiorno(){
           ${casettaCoupons>0 ? `<div style="font-size:12.5px;color:var(--muted);">🎟️ ${casettaCoupons} coupon</div>` : ''}
         </div>`;
       }
+      const casettaSaldo = Math.round(casettaCost) - casettaCoupons;
       return `<div class="card">
         <div class="casetta-block-title"><span>${escapeHtml(c.name)}</span><span style="font-weight:700;">${casettaTotal} ${u.plur}</span></div>
-        <div style="display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin:-6px 0 10px;">
-          <span>💶 <b style="color:var(--charcoal);">€ ${casettaCost.toFixed(2)}</b></span>
+        <div style="display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin:-6px 0 10px;flex-wrap:wrap;">
+          <span>💶 <b style="color:var(--charcoal);">€ ${Math.round(casettaCost)}</b></span>
           <span>🎟️ <b style="color:var(--charcoal);">${casettaCoupons}</b> coupon</span>
+          <span>⚖️ Saldo: <b style="color:${casettaSaldo>=0?'var(--red)':'var(--green)'};">${casettaSaldo>=0?'+':''}${casettaSaldo}</b></span>
         </div>
         <table><thead><tr><th>Prodotto</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} ${u.soldLabel}</th></tr></thead>
         <tbody>${prodRows}</tbody></table>
@@ -1343,6 +1349,14 @@ const DEMO_NAMES = ['Marco','Giulia','Luca','Sara','Davide','Elena','Matteo','Fr
 function randInt(min, max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function pickRandom(arr){ return arr[randInt(0, arr.length-1)]; }
 
+function couponsPerGlass(cost){
+  // In media un calice costa circa 4 coupon; più la bottiglia è cara, più ne servono
+  return Math.max(1, Math.round(cost / 2.7));
+}
+function couponsPerBottle(cost){
+  return couponsPerGlass(cost) * 6; // una bottiglia = 6 calici
+}
+
 async function generateSimulation(){
   const simDays = ['w1v','w1s','w1d'];
   const casette = allCasette();
@@ -1364,13 +1378,16 @@ async function generateSimulation(){
   const newLoadsLog = [];
   const newLog = [];
   const newCoupons = {};
+  const couponsNeeded = {}; // couponsNeeded[casettaId][dayId] = totale coupon "consumati" dalle vendite
 
+  // 1) Carichi
   casette.forEach(function(c){
     newLoads[c.id] = {};
-    newCoupons[c.id] = {};
+    couponsNeeded[c.id] = {};
     simDays.forEach(function(dayId){
       const win = dayWindow(DAYS.find(function(d){ return d.id===dayId; }));
       newLoads[c.id][dayId] = {};
+      couponsNeeded[c.id][dayId] = 0;
       c.products.forEach(function(p){
         let qty = 0;
         if(dayId === 'w1v'){
@@ -1388,14 +1405,10 @@ async function generateSimulation(){
           });
         }
       });
-      newCoupons[c.id][dayId] = {
-        count: randInt(5, 25),
-        person: pickRandom(DEMO_NAMES),
-        ts: win.start.getTime() + randInt(4,8)*3600*1000
-      };
     });
   });
 
+  // 2) Vendite (bottiglie/fusti finiti) + accumulo coupon necessari per quelle vendite
   casette.forEach(function(c){
     simDays.forEach(function(dayId){
       const win = dayWindow(DAYS.find(function(d){ return d.id===dayId; }));
@@ -1416,7 +1429,26 @@ async function generateSimulation(){
             ts: win.start.getTime() + randInt(0, (win.end.getTime()-win.start.getTime())-1000)
           });
         }
+        if(sellToday > 0){
+          couponsNeeded[c.id][dayId] += sellToday * couponsPerBottle(parseFloat(p.cost) || 0);
+        }
       });
+    });
+  });
+
+  // 3) Coupon raccolti: basati sui coupon "necessari" per le vendite di quella serata,
+  //    con una piccola variazione realistica (chi paga in contanti, sconti, ecc.)
+  casette.forEach(function(c){
+    newCoupons[c.id] = {};
+    simDays.forEach(function(dayId){
+      const win = dayWindow(DAYS.find(function(d){ return d.id===dayId; }));
+      const base = couponsNeeded[c.id][dayId];
+      const count = base > 0 ? Math.max(0, Math.round(base * (0.85 + Math.random() * 0.3))) : 0;
+      newCoupons[c.id][dayId] = {
+        count: count,
+        person: pickRandom(DEMO_NAMES),
+        ts: win.start.getTime() + randInt(4,8)*3600*1000
+      };
     });
   });
 
