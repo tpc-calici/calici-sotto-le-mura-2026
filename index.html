@@ -380,6 +380,8 @@ const state = {
     giornoGroupId: DAYS[0].id,
     logFilterCat: 'all',
     logFilterCasetta: 'all',
+    logFilterProduct: 'all',
+    logFilterDay: 'all',
     confirmDeleteLogId: null,
     confirmDemoAction: null,
     couponAddError: '',
@@ -1040,11 +1042,18 @@ function renderGestoreCoupon(){
 function renderGestoreLog(){
   const cat = state.ui.logFilterCat;
   const cid = state.ui.logFilterCasetta;
+  const pid = state.ui.logFilterProduct;
+  const dayFilter = state.ui.logFilterDay;
   const confirmingId = state.ui.confirmDeleteLogId;
   let entries = state.log.slice().sort(function(a,b){ return b.ts-a.ts; });
   if(cat !== 'all') entries = entries.filter(function(e){ return e.categoria===cat; });
   if(cid !== 'all') entries = entries.filter(function(e){ return e.casettaId===cid; });
+  if(pid !== 'all') entries = entries.filter(function(e){ return e.productId===pid; });
+  if(dayFilter !== 'all') entries = entries.filter(function(e){ return getDayIdForTimestamp(e.ts)===dayFilter; });
+
   const casetteForFilter = cat==='all' ? allCasette() : allCasette().filter(function(c){ return c.categoria===cat; });
+  const casetteForProductFilter = cid==='all' ? casetteForFilter : casetteForFilter.filter(function(c){ return c.id===cid; });
+
   return `
     <div class="filters">
       <select id="log-filter-cat">
@@ -1055,6 +1064,19 @@ function renderGestoreLog(){
       <select id="log-filter-casetta">
         <option value="all" ${cid==='all'?'selected':''}>Tutte le casette</option>
         ${casetteForFilter.map(function(c){ return `<option value="${c.id}" ${cid===c.id?'selected':''}>${escapeHtml(c.name)}</option>`; }).join('')}
+      </select>
+      <select id="log-filter-product">
+        <option value="all" ${pid==='all'?'selected':''}>Tutti i vini/birre</option>
+        ${casetteForProductFilter.map(function(c){
+          return c.products.map(function(p){
+            const label = cid==='all' ? `${c.name} — ${p.name}` : p.name;
+            return `<option value="${p.id}" ${pid===p.id?'selected':''}>${escapeHtml(label)}</option>`;
+          }).join('');
+        }).join('')}
+      </select>
+      <select id="log-filter-day">
+        <option value="all" ${dayFilter==='all'?'selected':''}>Tutte le serate</option>
+        ${DAYS.map(function(d){ return `<option value="${d.id}" ${dayFilter===d.id?'selected':''}>${d.label}</option>`; }).join('')}
       </select>
     </div>
     <div class="card" style="padding:0;overflow-x:auto;">
@@ -1283,8 +1305,10 @@ function handleChangeAction(target){
   else if(target.id === 'hist-casetta-select'){ ui.histCasettaId = target.value; ui.histProductId = 'all'; render(); }
   else if(target.id === 'hist-product-select'){ ui.histProductId = target.value; render(); }
   else if(target.id === 'hist-day-select'){ ui.histGroupId = target.value; render(); }
-  else if(target.id === 'log-filter-cat'){ ui.logFilterCat = target.value; ui.logFilterCasetta='all'; render(); }
-  else if(target.id === 'log-filter-casetta'){ ui.logFilterCasetta = target.value; render(); }
+  else if(target.id === 'log-filter-cat'){ ui.logFilterCat = target.value; ui.logFilterCasetta='all'; ui.logFilterProduct='all'; render(); }
+  else if(target.id === 'log-filter-casetta'){ ui.logFilterCasetta = target.value; ui.logFilterProduct='all'; render(); }
+  else if(target.id === 'log-filter-product'){ ui.logFilterProduct = target.value; render(); }
+  else if(target.id === 'log-filter-day'){ ui.logFilterDay = target.value; render(); }
 }
 
 async function handleBlurEdit(target){
