@@ -183,9 +183,10 @@
   .summary-strip{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
   .summary-grid-2x2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
   .summary-grid-2x2 .box{
-    aspect-ratio:1/1;background:var(--paper);border:1px solid var(--border);border-radius:14px;
-    padding:14px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    background:var(--paper);border:1px solid var(--border);border-radius:14px;
+    padding:10px 14px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
   }
+  .summary-grid-2x2 .box.box-wide{grid-column:1 / -1;}
   .summary-grid-2x2 .box span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;}
   .summary-grid-2x2 .box b{font-size:30px;font-family:'Fraunces',serif;color:var(--wine-dark);line-height:1;}
   .summary-strip .box{flex:1;min-width:100px;background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;}
@@ -779,13 +780,13 @@ function renderGestoreVenditeGiorno(){
           ${casettaCoupons>0 ? `<div style="font-size:12.5px;color:var(--muted);">🎟️ ${casettaCoupons} coupon</div>` : ''}
         </div>`;
       }
-      const casettaSaldo = Math.round(casettaCost) - casettaCoupons;
+      const casettaSaldo = casettaCoupons - Math.round(casettaCost);
       return `<div class="card">
         <div class="casetta-block-title"><span>${escapeHtml(c.name)}</span><span style="font-weight:700;">${casettaTotal} ${u.plur}</span></div>
         <div style="display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin:-6px 0 10px;flex-wrap:wrap;">
           <span>💶 <b style="color:var(--charcoal);">€ ${Math.round(casettaCost)}</b></span>
           <span>🎟️ <b style="color:var(--charcoal);">${casettaCoupons}</b> coupon</span>
-          <span>⚖️ Saldo: <b style="color:${casettaSaldo>=0?'var(--red)':'var(--green)'};">${casettaSaldo>=0?'+':''}${casettaSaldo}</b></span>
+          <span>⚖️ Saldo: <b style="color:${casettaSaldo>=0?'var(--green)':'var(--red)'};">${casettaSaldo>=0?'+':''}${casettaSaldo}</b></span>
         </div>
         <table><thead><tr><th>Prodotto</th><th>${u.plur.charAt(0).toUpperCase()+u.plur.slice(1)} ${u.soldLabel}</th></tr></thead>
         <tbody>${prodRows}</tbody></table>
@@ -814,6 +815,7 @@ function renderGestoreVenditeGiorno(){
       <div class="box"><span>Fusti finiti</span><b>${totalFusti}</b></div>
       <div class="box"><span>Costo Totale</span><b>€ ${Math.round(totalCost)}</b></div>
       <div class="box"><span>Coupon venduti</span><b>${couponTotal}</b></div>
+      <div class="box box-wide"><span>Saldo (coupon − costo)</span><b style="color:${(couponTotal-Math.round(totalCost))>=0?'var(--green)':'var(--red)'};">${(couponTotal-Math.round(totalCost))>=0?'+':''}${couponTotal-Math.round(totalCost)}</b></div>
     </div>
     ${block('vino','🍷 Vino')}
     ${block('birra','🍺 Birra')}
