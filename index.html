@@ -137,11 +137,6 @@
   .btn-qty.minus{background:var(--paper);color:var(--red);border:1.5px solid var(--red-bg);}
   .btn-qty.minus:disabled{color:var(--muted);border-color:var(--border);opacity:.5;}
 
-  .toast{
-    position:fixed;left:50%;bottom:28px;transform:translateX(-50%);
-    background:var(--charcoal);color:#fff;padding:13px 22px;border-radius:30px;
-    font-size:14px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.28);z-index:80;text-align:center;
-  }
   .modal-overlay{
     position:fixed;inset:0;background:rgba(30,20,15,.5);display:flex;align-items:center;justify-content:center;
     z-index:90;padding:24px;
@@ -401,7 +396,7 @@ const state = {
   gestoreAuthed: false,
   ui: {
     catChoice: null,
-    toastMessage: null,
+    autoModalMessage: null,
     popupMessage: null,
     loadCasettaId: null,
     loadDayId: DAYS[0].id,
@@ -488,8 +483,10 @@ function render(){
     case 'gestore_demo': html = wrapGestoreSection('🧪 Dati di Prova', renderGestoreDemo()); break;
     default: html = '<div class="loading-full">Schermata non trovata</div>';
   }
-  if(state.ui.toastMessage){
-    html += `<div class="toast">${escapeHtml(state.ui.toastMessage)}</div>`;
+  if(state.ui.autoModalMessage){
+    html += `<div class="modal-overlay"><div class="modal-box">
+      <p style="margin-bottom:0;">${escapeHtml(state.ui.autoModalMessage)}</p>
+    </div></div>`;
   }
   if(state.ui.popupMessage){
     html += `<div class="modal-overlay"><div class="modal-box">
@@ -500,13 +497,13 @@ function render(){
   app.innerHTML = html;
 }
 
-function showToast(msg){
-  state.ui.toastMessage = msg;
-  clearTimeout(window.__toastTimer);
-  window.__toastTimer = setTimeout(function(){
-    state.ui.toastMessage = null;
+function showAutoModal(msg){
+  state.ui.autoModalMessage = msg;
+  clearTimeout(window.__autoModalTimer);
+  window.__autoModalTimer = setTimeout(function(){
+    state.ui.autoModalMessage = null;
     render();
-  }, 1300);
+  }, 2000);
 }
 
 function renderSetupNeeded(){
@@ -603,8 +600,8 @@ function renderCasettaView(){
         </div>
       </div>
       <div class="qty-btns">
-        <button class="btn-qty minus" data-action="decrement-finish" data-pid="${p.id}" ${finished<=0?'disabled':''}>−1</button>
         <button class="btn-qty plus" data-action="increment-finish" data-pid="${p.id}">+1</button>
+        <button class="btn-qty minus" data-action="decrement-finish" data-pid="${p.id}" ${finished<=0?'disabled':''}>−1</button>
       </div>
     </div>
     `;
@@ -1251,7 +1248,7 @@ async function handleAction(action, target){
         productId: pid, productName: product.name, person: s.name, ts: Date.now()
       });
       await saveLog(state.log);
-      showToast(s.categoria === 'birra' ? 'Fusto inserito' : 'Bottiglia inserita');
+      showAutoModal(s.categoria === 'birra' ? 'Fusto inserito' : 'Bottiglia inserita');
       render();
       break;
     }
