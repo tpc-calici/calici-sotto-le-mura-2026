@@ -294,13 +294,21 @@ function groupLabel(groupId){
 function wait(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
 function storageConfigured(){ return APPS_SCRIPT_URL && APPS_SCRIPT_URL.indexOf('INSERISCI_QUI') === -1; }
 
+const STOREGET_FETCH_FAILED = Symbol('fetch-failed');
 async function storeGet(key){
   if(!storageConfigured()) return null;
-  try{
-    const res = await fetch(APPS_SCRIPT_URL + '?key=' + encodeURIComponent(key));
-    const data = await res.json();
-    return (data && data.value != null) ? data.value : null;
-  }catch(e){ console.error('storeGet error', e); return null; }
+  const attempts = 3;
+  for(let i=0; i<attempts; i++){
+    try{
+      const res = await fetch(APPS_SCRIPT_URL + '?key=' + encodeURIComponent(key));
+      const data = await res.json();
+      return (data && data.value != null) ? data.value : null; // risposta valida dal server (anche se vuota)
+    }catch(e){
+      console.error('storeGet error (tentativo '+(i+1)+'/'+attempts+')', e);
+      if(i<attempts-1) await wait(500*(i+1));
+    }
+  }
+  return STOREGET_FETCH_FAILED; // tutti i tentativi falliti per problemi di rete: NON sappiamo lo stato reale
 }
 const saveQueues = {};
 function storeSet(key, value){
@@ -347,7 +355,13 @@ function defaultConfig(){
 
 async function getConfig(){
   const raw = await storeGet('config');
+  if(raw === STOREGET_FETCH_FAILED){
+    // Non siamo riusciti a contattare il server: NON creiamo/sovrascriviamo nulla.
+    // Usiamo quello che abbiamo già in memoria, se c'è, altrimenti dei default solo temporanei (non salvati).
+    return state.config || defaultConfig();
+  }
   if(raw){ try{ return JSON.parse(raw); }catch(e){} }
+  // Il server ha risposto correttamente e la chiave non esiste: è la primissima inizializzazione.
   const def = defaultConfig();
   await storeSet('config', JSON.stringify(def));
   return def;
@@ -356,6 +370,7 @@ async function saveConfig(cfg){ await storeSet('config', JSON.stringify(cfg)); }
 
 async function getLoads(){
   const raw = await storeGet('loads');
+  if(raw === STOREGET_FETCH_FAILED) return state.loads || {};
   if(raw){ try{ return JSON.parse(raw); }catch(e){} }
   return {};
 }
@@ -363,6 +378,7 @@ async function saveLoads(loads){ await storeSet('loads', JSON.stringify(loads));
 
 async function getLoadsLog(){
   const raw = await storeGet('loadsLog');
+  if(raw === STOREGET_FETCH_FAILED) return state.loadsLog || [];
   if(raw){ try{ return JSON.parse(raw); }catch(e){} }
   return [];
 }
@@ -370,6 +386,7 @@ async function saveLoadsLog(l){ await storeSet('loadsLog', JSON.stringify(l)); }
 
 async function getLog(){
   const raw = await storeGet('log');
+  if(raw === STOREGET_FETCH_FAILED) return state.log || [];
   if(raw){ try{ return JSON.parse(raw); }catch(e){} }
   return [];
 }
@@ -377,6 +394,7 @@ async function saveLog(log){ await storeSet('log', JSON.stringify(log)); }
 
 async function getCoupons(){
   const raw = await storeGet('coupons');
+  if(raw === STOREGET_FETCH_FAILED) return state.coupons || {};
   if(raw){ try{ return JSON.parse(raw); }catch(e){} }
   return {};
 }
