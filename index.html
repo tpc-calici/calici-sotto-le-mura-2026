@@ -492,12 +492,31 @@ async function getLoadsLog(){
 async function appendLoadsLogEntry(entry){ await storeAppend('loadsLog', entry.id, JSON.stringify(entry)); }
 async function clearLoadsLogList(){ await storeClearList('loadsLog'); await storeDeleteKey('loadsLog'); }
 
+/* Evita che una voce appena cancellata "ricompaia" per un istante se
+   l'aggiornamento automatico legge dal server prima che la cancellazione
+   sia stata completamente processata. */
+const recentlyDeletedLogIds = new Map();
+function markLogEntryDeleted(id){
+  recentlyDeletedLogIds.set(id, Date.now() + 15000);
+}
+function filterRecentlyDeleted(entries){
+  const now = Date.now();
+  return entries.filter(function(e){
+    if(!e || !e.id) return true;
+    const expiry = recentlyDeletedLogIds.get(e.id);
+    if(expiry === undefined) return true;
+    if(now > expiry){ recentlyDeletedLogIds.delete(e.id); return true; }
+    return false;
+  });
+}
+
 async function getLog(){
   const items = await storeListGet('log');
   if(items === STOREGET_FETCH_FAILED) return state.log || [];
   const itemEntries = items.map(function(v){ try{ return JSON.parse(v); }catch(e){ return null; } }).filter(Boolean);
   const legacyRaw = await storeGet('log'); // dati eventualmente salvati col formato precedente
-  return mergeLegacyEntries(itemEntries, legacyRaw);
+  const merged = mergeLegacyEntries(itemEntries, legacyRaw);
+  return filterRecentlyDeleted(merged);
 }
 async function appendLogEntry(entry){ await storeAppend('log', entry.id, JSON.stringify(entry)); }
 async function deleteLogEntry(entryId){ await storeDeleteItem('log', entryId); }
@@ -1466,6 +1485,7 @@ async function handleAction(action, target){
       if(idxToRemove !== -1){
         const removedEntry = state.log[idxToRemove];
         state.log.splice(idxToRemove, 1);
+        markLogEntryDeleted(removedEntry.id);
         ui.popupMessage = 'Annulla inserimento';
         render();
         deleteLogEntryReliable(removedEntry.id);
@@ -1506,6 +1526,7 @@ async function handleAction(action, target){
     case 'confirm-delete-log': {
       const idToDelete = target.dataset.id;
       state.log = state.log.filter(function(e){ return e.id !== idToDelete; });
+      markLogEntryDeleted(idToDelete);
       deleteLogEntryReliable(idToDelete);
       ui.confirmDeleteLogId = null;
       render();
@@ -1800,7 +1821,7 @@ app.addEventListener('focusout', function(e){
 /* =========================================================================
    AGGIORNAMENTO AUTOMATICO (polling)
    ========================================================================= */
-const AUTO_REFRESH_MS = 12000;
+const AUTO_REFRESH_MS = 10000;
 // L'aggiornamento automatico è attivo solo durante l'evento vero, per non
 // consumare risorse inutilmente negli altri giorni. Il pulsante 🔄 manuale
 // funziona sempre, in qualsiasi momento (utile anche per i test).
