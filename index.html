@@ -1328,9 +1328,8 @@ async function handleAction(action, target){
         productId: pid, productName: product.name, person: s.name, ts: Date.now()
       };
       state.log.push(newEntry);
-      await appendLogEntry(newEntry);
-      showAutoModal(s.categoria === 'birra' ? 'Fusto inserito' : 'Bottiglia inserita');
       render();
+      appendLogEntry(newEntry);
       break;
     }
     case 'decrement-finish': {
@@ -1344,10 +1343,12 @@ async function handleAction(action, target){
       if(idxToRemove !== -1){
         const removedEntry = state.log[idxToRemove];
         state.log.splice(idxToRemove, 1);
-        await deleteLogEntry(removedEntry.id);
         ui.popupMessage = 'Annulla inserimento';
+        render();
+        deleteLogEntry(removedEntry.id);
+      } else {
+        render();
       }
-      render();
       break;
     }
     case 'close-popup': ui.popupMessage = null; render(); break;
