@@ -129,6 +129,11 @@
   .stat-residue.low b{color:var(--red);}
   .stat-residue.ok b{color:var(--green);}
   .qty-btns{display:flex;gap:8px;flex-shrink:0;}
+  .bulk-qty-input{
+    width:64px;height:44px;border-radius:11px;border:1.5px solid var(--border);
+    font-size:17px;font-weight:700;text-align:center;flex-shrink:0;background:var(--paper);color:var(--charcoal);
+  }
+  .bulk-qty-input:focus{outline:2px solid var(--wine-light);border-color:var(--wine-light);}
   .btn-qty{
     width:52px;height:44px;border-radius:11px;border:none;font-weight:800;font-size:16px;flex-shrink:0;
   }
@@ -521,6 +526,7 @@ const state = {
   ui: {
     catChoice: null,
     autoModalMessage: null,
+    casettaMode: 'realtime',
     popupMessage: null,
     loadCasettaId: null,
     loadDayId: DAYS[0].id,
@@ -709,27 +715,70 @@ function renderCasettaView(){
     return `<div class="screen"><p>Casetta non trovata. <button class="btn btn-outline" data-action="logout-casetta">Torna al login</button></p></div>`;
   }
   const icon = s.categoria==='vino' ? '🍷' : '🍺';
-  const rows = casetta.products.map(function(p){
-    const loaded = totalLoaded(casetta.id, p.id);
-    const finished = totalFinished(casetta.id, p.id);
-    const residue = loaded - finished;
-    const residueClass = loaded===0 ? '' : (residue<=2 ? 'low' : 'ok');
-    return `
-    <div class="product-card">
-      <div>
-        <p class="pname">${escapeHtml(p.name)} - ${p.coupons!=null && p.coupons!=='' ? p.coupons : 0} coupon</p>
-        <div class="stats">
-          <span>Finiti&nbsp;<b>${finished}</b></span>
-          <span class="stat-residue ${residueClass}">Residui&nbsp;<b>${loaded===0 ? '—' : residue}</b></span>
+  const mode = state.ui.casettaMode || 'realtime';
+
+  const modeSelectorHtml = `
+    <div class="field">
+      <label>Modalità di inserimento</label>
+      <select id="casetta-mode-select">
+        <option value="realtime" ${mode==='realtime'?'selected':''}>⚡ Tempo reale (una bottiglia alla volta)</option>
+        <option value="massivo" ${mode==='massivo'?'selected':''}>📋 Inserimento massivo (fine serata)</option>
+      </select>
+    </div>`;
+
+  let bodyHtml = '';
+  if(mode === 'realtime'){
+    const rows = casetta.products.map(function(p){
+      const loaded = totalLoaded(casetta.id, p.id);
+      const finished = totalFinished(casetta.id, p.id);
+      const residue = loaded - finished;
+      const residueClass = loaded===0 ? '' : (residue<=2 ? 'low' : 'ok');
+      return `
+      <div class="product-card">
+        <div>
+          <p class="pname">${escapeHtml(p.name)} - ${p.coupons!=null && p.coupons!=='' ? p.coupons : 0} coupon</p>
+          <div class="stats">
+            <span>Finiti&nbsp;<b>${finished}</b></span>
+            <span class="stat-residue ${residueClass}">Residui&nbsp;<b>${loaded===0 ? '—' : residue}</b></span>
+          </div>
+        </div>
+        <div class="qty-btns">
+          <button class="btn-qty plus" data-action="increment-finish" data-pid="${p.id}">+1</button>
+          <button class="btn-qty minus" data-action="decrement-finish" data-pid="${p.id}" ${finished<=0?'disabled':''}>−1</button>
         </div>
       </div>
-      <div class="qty-btns">
-        <button class="btn-qty plus" data-action="increment-finish" data-pid="${p.id}">+1</button>
-        <button class="btn-qty minus" data-action="decrement-finish" data-pid="${p.id}" ${finished<=0?'disabled':''}>−1</button>
-      </div>
-    </div>
+      `;
+    }).join('');
+    bodyHtml = `
+      <p class="hint-subtitle">Clicca +1 se devi inserire una bottiglia finita. Clicca -1 se devi annullare un inserimento sbagliato.</p>
+      ${rows}
+      <button class="coupon-link" data-action="go-casetta-log">🗑️ Annulla inserimento</button>
     `;
-  }).join('');
+  } else {
+    const rows = casetta.products.map(function(p){
+      const loaded = totalLoaded(casetta.id, p.id);
+      const finished = totalFinished(casetta.id, p.id);
+      const residue = loaded - finished;
+      const residueClass = loaded===0 ? '' : (residue<=2 ? 'low' : 'ok');
+      return `
+      <div class="product-card">
+        <div>
+          <p class="pname">${escapeHtml(p.name)} - ${p.coupons!=null && p.coupons!=='' ? p.coupons : 0} coupon</p>
+          <div class="stats">
+            <span>Finiti&nbsp;<b>${finished}</b></span>
+            <span class="stat-residue ${residueClass}">Residui&nbsp;<b>${loaded===0 ? '—' : residue}</b></span>
+          </div>
+        </div>
+        <input type="number" min="0" inputmode="numeric" class="bulk-qty-input" id="bulk-qty-${p.id}" placeholder="0">
+      </div>
+      `;
+    }).join('');
+    bodyHtml = `
+      <p class="hint-subtitle">Inserisci per ogni vino/fusto quante ne hai finite in totale, poi premi "Salva inserimento" una volta sola.</p>
+      ${rows}
+      <button class="btn btn-primary" data-action="save-bulk-finish">💾 Salva inserimento</button>
+    `;
+  }
 
   return `
   <div class="topbar">
@@ -743,9 +792,8 @@ function renderCasettaView(){
     </div>
   </div>
   <div class="content">
-    <p class="hint-subtitle">Clicca +1 se devi inserire una bottiglia finita. Clicca -1 se devi annullare un inserimento sbagliato.</p>
-    ${rows}
-    <button class="coupon-link" data-action="go-casetta-log">🗑️ Annulla inserimento</button>
+    ${modeSelectorHtml}
+    ${bodyHtml}
   </div>`;
 }
 
@@ -1361,6 +1409,37 @@ async function handleAction(action, target){
       state.screen = 'casetta_view'; render();
       break;
     }
+    case 'save-bulk-finish': {
+      const s = state.casettaSession;
+      const casetta = findCasetta(s.categoria, s.casettaId);
+      const newEntries = [];
+      casetta.products.forEach(function(p){
+        const el = document.getElementById('bulk-qty-'+p.id);
+        if(!el) return;
+        const qty = parseInt(el.value, 10);
+        if(!isNaN(qty) && qty > 0){
+          for(let i=0; i<qty; i++){
+            newEntries.push({
+              id: 'e'+Date.now()+Math.random().toString(36).slice(2,7)+'-'+i,
+              categoria: s.categoria, casettaId: casetta.id, casettaName: casetta.name,
+              productId: p.id, productName: p.name, person: s.name, ts: Date.now()
+            });
+          }
+        }
+      });
+      if(newEntries.length > 0){
+        newEntries.forEach(function(e){ state.log.push(e); });
+        render();
+        const items = newEntries.map(function(e){ return { listKey:'log', itemId:e.id, value: JSON.stringify(e) }; });
+        reliablePost({ action:'appendMany', items: items });
+        ui.popupMessage = newEntries.length===1 ? '1 bottiglia/fusto inserito' : (newEntries.length + ' bottiglie/fusti inseriti');
+        render();
+      } else {
+        ui.popupMessage = 'Nessuna quantità inserita';
+        render();
+      }
+      break;
+    }
     case 'increment-finish': {
       const pid = target.dataset.pid;
       const s = state.casettaSession;
@@ -1523,7 +1602,8 @@ async function handleAction(action, target){
 
 function handleChangeAction(target){
   const ui = state.ui;
-  if(target.id === 'load-casetta-select'){ ui.loadCasettaId = target.value; render(); }
+  if(target.id === 'casetta-mode-select'){ ui.casettaMode = target.value; render(); }
+  else if(target.id === 'load-casetta-select'){ ui.loadCasettaId = target.value; render(); }
   else if(target.id === 'load-day-select'){ ui.loadDayId = target.value; render(); }
   else if(target.id === 'giorno-day-select'){ ui.giornoGroupId = target.value; render(); }
   else if(target.id === 'hist-casetta-select'){ ui.histCasettaId = target.value; ui.histProductId = 'all'; render(); }
@@ -1758,7 +1838,8 @@ async function refreshSharedData(force){
     state.loadsLog = ll;
     state.log = lg;
     state.coupons = cp;
-    if(force || UNSAFE_AUTOREFRESH_SCREENS.indexOf(state.screen) === -1){
+    const isBulkEntryScreen = state.screen === 'casetta_view' && state.ui.casettaMode === 'massivo';
+    if(force || (UNSAFE_AUTOREFRESH_SCREENS.indexOf(state.screen) === -1 && !isBulkEntryScreen)){
       render();
     }
   }catch(e){ console.error('refresh error', e); }
