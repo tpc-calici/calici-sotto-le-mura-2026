@@ -330,6 +330,67 @@ async function doStoreSet(key, value){
     }
   }
 }
+async function storeDeleteKey(key){
+  try{ await fetch(APPS_SCRIPT_URL, { method:'POST', body: JSON.stringify({action:'delete', key:key}) }); }catch(e){}
+}
+
+/* Liste a righe indipendenti: ogni elemento è una riga a sé, così più casette
+   possono inserire nello stesso momento senza che un salvataggio ne cancelli un altro. */
+async function storeListGet(listKey){
+  if(!storageConfigured()) return STOREGET_FETCH_FAILED;
+  const attempts = 3;
+  for(let i=0; i<attempts; i++){
+    try{
+      const res = await fetch(APPS_SCRIPT_URL + '?action=list&listKey=' + encodeURIComponent(listKey));
+      const data = await res.json();
+      return (data && Array.isArray(data.items)) ? data.items : [];
+    }catch(e){
+      console.error('storeListGet error (tentativo '+(i+1)+'/'+attempts+')', e);
+      if(i<attempts-1) await wait(500*(i+1));
+    }
+  }
+  return STOREGET_FETCH_FAILED;
+}
+async function storeAppend(listKey, itemId, value){
+  const attempts = 3;
+  for(let i=0;i<attempts;i++){
+    try{
+      await fetch(APPS_SCRIPT_URL, { method:'POST', body: JSON.stringify({action:'append', listKey:listKey, itemId:itemId, value:value}) });
+      return;
+    }catch(e){
+      console.error('storeAppend error (tentativo '+(i+1)+'/'+attempts+')', e);
+      if(i<attempts-1) await wait(500*(i+1));
+    }
+  }
+}
+async function storeAppendMany(items){
+  if(!items.length) return;
+  const attempts = 3;
+  for(let i=0;i<attempts;i++){
+    try{
+      await fetch(APPS_SCRIPT_URL, { method:'POST', body: JSON.stringify({action:'appendMany', items:items}) });
+      return;
+    }catch(e){
+      console.error('storeAppendMany error (tentativo '+(i+1)+'/'+attempts+')', e);
+      if(i<attempts-1) await wait(500*(i+1));
+    }
+  }
+}
+async function storeDeleteItem(listKey, itemId){
+  const attempts = 3;
+  for(let i=0;i<attempts;i++){
+    try{
+      await fetch(APPS_SCRIPT_URL, { method:'POST', body: JSON.stringify({action:'deleteItem', listKey:listKey, itemId:itemId}) });
+      return;
+    }catch(e){
+      console.error('storeDeleteItem error (tentativo '+(i+1)+'/'+attempts+')', e);
+      if(i<attempts-1) await wait(500*(i+1));
+    }
+  }
+}
+async function storeClearList(listKey){
+  try{ await fetch(APPS_SCRIPT_URL, { method:'POST', body: JSON.stringify({action:'clearList', listKey:listKey}) }); }catch(e){}
+}
 
 function getLocalSession(){
   try{ const raw = localStorage.getItem('cb_session_casetta'); return raw ? JSON.parse(raw) : null; }
@@ -377,20 +438,21 @@ async function getLoads(){
 async function saveLoads(loads){ await storeSet('loads', JSON.stringify(loads)); }
 
 async function getLoadsLog(){
-  const raw = await storeGet('loadsLog');
-  if(raw === STOREGET_FETCH_FAILED) return state.loadsLog || [];
-  if(raw){ try{ return JSON.parse(raw); }catch(e){} }
-  return [];
+  const items = await storeListGet('loadsLog');
+  if(items === STOREGET_FETCH_FAILED) return state.loadsLog || [];
+  return items.map(function(v){ try{ return JSON.parse(v); }catch(e){ return null; } }).filter(Boolean);
 }
-async function saveLoadsLog(l){ await storeSet('loadsLog', JSON.stringify(l)); }
+async function appendLoadsLogEntry(entry){ await storeAppend('loadsLog', entry.id, JSON.stringify(entry)); }
+async function clearLoadsLogList(){ await storeClearList('loadsLog'); await storeDeleteKey('loadsLog'); }
 
 async function getLog(){
-  const raw = await storeGet('log');
-  if(raw === STOREGET_FETCH_FAILED) return state.log || [];
-  if(raw){ try{ return JSON.parse(raw); }catch(e){} }
-  return [];
+  const items = await storeListGet('log');
+  if(items === STOREGET_FETCH_FAILED) return state.log || [];
+  return items.map(function(v){ try{ return JSON.parse(v); }catch(e){ return null; } }).filter(Boolean);
 }
-async function saveLog(log){ await storeSet('log', JSON.stringify(log)); }
+async function appendLogEntry(entry){ await storeAppend('log', entry.id, JSON.stringify(entry)); }
+async function deleteLogEntry(entryId){ await storeDeleteItem('log', entryId); }
+async function clearLogList(){ await storeClearList('log'); await storeDeleteKey('log'); }
 
 async function getCoupons(){
   const raw = await storeGet('coupons');
@@ -1260,12 +1322,13 @@ async function handleAction(action, target){
       const s = state.casettaSession;
       const casetta = findCasetta(s.categoria, s.casettaId);
       const product = casetta.products.find(function(p){ return p.id===pid; });
-      state.log.push({
+      const newEntry = {
         id: 'e'+Date.now()+Math.random().toString(36).slice(2,7),
         categoria: s.categoria, casettaId: casetta.id, casettaName: casetta.name,
         productId: pid, productName: product.name, person: s.name, ts: Date.now()
-      });
-      await saveLog(state.log);
+      };
+      state.log.push(newEntry);
+      await appendLogEntry(newEntry);
       showAutoModal(s.categoria === 'birra' ? 'Fusto inserito' : 'Bottiglia inserita');
       render();
       break;
@@ -1279,8 +1342,9 @@ async function handleAction(action, target){
         if(state.log[i].casettaId===casetta.id && state.log[i].productId===pid){ idxToRemove = i; break; }
       }
       if(idxToRemove !== -1){
+        const removedEntry = state.log[idxToRemove];
         state.log.splice(idxToRemove, 1);
-        await saveLog(state.log);
+        await deleteLogEntry(removedEntry.id);
         ui.popupMessage = 'Annulla inserimento';
       }
       render();
@@ -1318,7 +1382,7 @@ async function handleAction(action, target){
     case 'confirm-delete-log': {
       const idToDelete = target.dataset.id;
       state.log = state.log.filter(function(e){ return e.id !== idToDelete; });
-      await saveLog(state.log);
+      await deleteLogEntry(idToDelete);
       ui.confirmDeleteLogId = null;
       render();
       break;
@@ -1386,22 +1450,25 @@ async function handleAction(action, target){
       if(!state.loads[cid]) state.loads[cid] = {};
       if(!state.loads[cid][dayId]) state.loads[cid][dayId] = {};
       let anyAdded = false;
+      const newEntries = [];
       casetta.products.forEach(function(p){
         const el = document.getElementById('load-add-'+p.id);
         const val = parseInt(el.value, 10);
         if(!isNaN(val) && val > 0){
           state.loads[cid][dayId][p.id] = (state.loads[cid][dayId][p.id] || 0) + val;
-          state.loadsLog.push({
+          const entry = {
             id: 'l'+Date.now()+Math.random().toString(36).slice(2,6),
             casettaId: cid, casettaName: casetta.name, categoria: casetta.categoria,
             dayId: dayId, productId: p.id, productName: p.name, qty: val, ts: Date.now()
-          });
+          };
+          state.loadsLog.push(entry);
+          newEntries.push(entry);
           anyAdded = true;
         }
       });
       if(anyAdded){
         await saveLoads(state.loads);
-        await saveLoadsLog(state.loadsLog);
+        await storeAppendMany(newEntries.map(function(e){ return { listKey:'loadsLog', itemId:e.id, value: JSON.stringify(e) }; }));
       }
       render();
       break;
@@ -1571,9 +1638,12 @@ async function generateSimulation(){
   state.log = newLog;
   state.coupons = newCoupons;
   await saveLoads(state.loads);
-  await saveLoadsLog(state.loadsLog);
-  await saveLog(state.log);
   await saveCoupons(state.coupons);
+  await clearLoadsLogList();
+  await clearLogList();
+  const bulkItems = newLog.map(function(e){ return { listKey:'log', itemId:e.id, value:JSON.stringify(e) }; })
+    .concat(newLoadsLog.map(function(e){ return { listKey:'loadsLog', itemId:e.id, value:JSON.stringify(e) }; }));
+  await storeAppendMany(bulkItems);
 }
 
 async function resetEventData(){
@@ -1582,9 +1652,9 @@ async function resetEventData(){
   state.log = [];
   state.coupons = {};
   await saveLoads(state.loads);
-  await saveLoadsLog(state.loadsLog);
-  await saveLog(state.log);
   await saveCoupons(state.coupons);
+  await clearLoadsLogList();
+  await clearLogList();
 }
 
 app.addEventListener('click', function(e){
