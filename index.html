@@ -392,6 +392,33 @@ async function storeClearList(listKey){
   try{ await fetch(APPS_SCRIPT_URL, { method:'POST', body: JSON.stringify({action:'clearList', listKey:listKey}) }); }catch(e){}
 }
 
+/* Invio "a prova di chiusura pagina": usato per le azioni rapide (+1/-1) dove
+   la persona potrebbe chiudere la pagina un istante dopo aver toccato il pulsante.
+   sendBeacon è garantito dal browser per completarsi anche in quel caso, a
+   differenza di una normale fetch che può essere interrotta a metà. */
+function reliablePost(payloadObj){
+  if(!storageConfigured()) return;
+  const payload = JSON.stringify(payloadObj);
+  let sent = false;
+  if(navigator.sendBeacon){
+    try{
+      const blob = new Blob([payload], { type: 'text/plain;charset=UTF-8' });
+      sent = navigator.sendBeacon(APPS_SCRIPT_URL, blob);
+    }catch(e){ sent = false; }
+  }
+  if(!sent){
+    fetch(APPS_SCRIPT_URL, { method:'POST', body: payload }).catch(function(e){
+      console.error('reliablePost fallback error', e);
+    });
+  }
+}
+function appendLogEntryReliable(entry){
+  reliablePost({ action:'append', listKey:'log', itemId: entry.id, value: JSON.stringify(entry) });
+}
+function deleteLogEntryReliable(entryId){
+  reliablePost({ action:'deleteItem', listKey:'log', itemId: entryId });
+}
+
 function getLocalSession(){
   try{ const raw = localStorage.getItem('cb_session_casetta'); return raw ? JSON.parse(raw) : null; }
   catch(e){ return null; }
@@ -1346,7 +1373,7 @@ async function handleAction(action, target){
       };
       state.log.push(newEntry);
       render();
-      appendLogEntry(newEntry);
+      appendLogEntryReliable(newEntry);
       break;
     }
     case 'decrement-finish': {
@@ -1362,7 +1389,7 @@ async function handleAction(action, target){
         state.log.splice(idxToRemove, 1);
         ui.popupMessage = 'Annulla inserimento';
         render();
-        deleteLogEntry(removedEntry.id);
+        deleteLogEntryReliable(removedEntry.id);
       } else {
         render();
       }
@@ -1400,7 +1427,7 @@ async function handleAction(action, target){
     case 'confirm-delete-log': {
       const idToDelete = target.dataset.id;
       state.log = state.log.filter(function(e){ return e.id !== idToDelete; });
-      await deleteLogEntry(idToDelete);
+      deleteLogEntryReliable(idToDelete);
       ui.confirmDeleteLogId = null;
       render();
       break;
