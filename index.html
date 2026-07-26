@@ -268,7 +268,7 @@ const DAYS = [
 function dayWindow(day){
   const parts = day.date.split('-').map(Number);
   const start = new Date(parts[0], parts[1]-1, parts[2], 18, 0, 0, 0);
-  const end   = new Date(parts[0], parts[1]-1, parts[2], 27, 0, 0, 0);
+  const end   = new Date(parts[0], parts[1]-1, parts[2], 39, 0, 0, 0); // 39:00 = 15:00 del giorno dopo
   return { start: start, end: end };
 }
 function getDayIdForTimestamp(ts){
@@ -1069,7 +1069,7 @@ function renderGestoreVenditeGiorno(){
         </optgroup>
       </select>
     </div>
-    ${singleDay ? `<p style="color:var(--muted);font-size:12.5px;margin-top:-8px;">Finestra: ${singleDay.date.split('-').reverse().join('/')} dalle 18:00 alle 03:00 del giorno dopo.</p>` : `<p style="color:var(--muted);font-size:12.5px;margin-top:-8px;">${groupLabel(groupId)}: somma delle giornate incluse.</p>`}
+    ${singleDay ? `<p style="color:var(--muted);font-size:12.5px;margin-top:-8px;">Finestra: ${singleDay.date.split('-').reverse().join('/')} dalle 18:00 alle 15:00 del giorno dopo.</p>` : `<p style="color:var(--muted);font-size:12.5px;margin-top:-8px;">${groupLabel(groupId)}: somma delle giornate incluse.</p>`}
     <div class="summary-grid-2x2">
       <div class="box"><span>Bottiglie finite</span><b>${totalBottiglie}</b></div>
       <div class="box"><span>Fusti finiti</span><b>${totalFusti}</b></div>
