@@ -1841,7 +1841,7 @@ function autoRefreshTick(){
 // Schermate con campi non ancora salvati: qui l'aggiornamento automatico
 // aggiorna i dati in background ma NON ridisegna lo schermo, per non
 // interrompere chi sta scrivendo. Il pulsante 🔄 forza comunque l'aggiornamento.
-const UNSAFE_AUTOREFRESH_SCREENS = ['casetta_login','gestore_login','casetta_category','casetta_select','gestore_carico','gestore_config'];
+const UNSAFE_AUTOREFRESH_SCREENS = ['casetta_login','gestore_login','casetta_category','casetta_select','gestore_carico','gestore_config','gestore_coupon'];
 
 async function refreshSharedData(force){
   if(!storageConfigured()) return;
