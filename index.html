@@ -1276,18 +1276,20 @@ function renderGestoreCoupon(){
     </div>`;
   }).join('');
 
-  const casetteDatalist = `<datalist id="coupon-casette-datalist">
-    ${casette.map(function(c){ return `<option value="${escapeAttr(c.name)}">`; }).join('')}
-  </datalist>`;
-
   return `
     <div class="card">
       <h3 class="section-title" style="font-size:16px;">➕ Inserisci coupon</h3>
       ${state.ui.couponAddError ? `<div class="error-msg">${state.ui.couponAddError}</div>` : ''}
       <div class="field">
         <label>Casetta</label>
-        <input type="text" id="coupon-add-casetta-search" list="coupon-casette-datalist" placeholder="Cerca il nome della casetta...">
-        ${casetteDatalist}
+        <select id="coupon-add-casetta-select">
+          <optgroup label="Vino">
+            ${state.config.vino.map(function(c){ return `<option value="${c.id}">${escapeHtml(c.name)}</option>`; }).join('')}
+          </optgroup>
+          <optgroup label="Birra">
+            ${state.config.birra.map(function(c){ return `<option value="${c.id}">${escapeHtml(c.name)}</option>`; }).join('')}
+          </optgroup>
+        </select>
       </div>
       <div class="field">
         <label>Serata</label>
@@ -1550,12 +1552,12 @@ async function handleAction(action, target){
     }
 
     case 'gestore-save-coupon': {
-      const nameVal = document.getElementById('coupon-add-casetta-search').value.trim().toLowerCase();
+      const casettaId = document.getElementById('coupon-add-casetta-select').value;
       const dayId = document.getElementById('coupon-add-day-select').value;
       const countVal = parseInt(document.getElementById('coupon-add-count-input').value, 10);
-      const casetta = allCasette().find(function(c){ return c.name.trim().toLowerCase() === nameVal; });
-      if(!nameVal || !casetta){
-        ui.couponAddError = 'Casetta non trovata: controlla il nome inserito.';
+      const casetta = allCasette().find(function(c){ return c.id === casettaId; });
+      if(!casetta){
+        ui.couponAddError = 'Casetta non trovata.';
         render();
         return;
       }
